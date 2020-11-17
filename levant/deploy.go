@@ -211,11 +211,19 @@ func (l *levantDeployment) deploy() (success bool) {
 
 func (l *levantDeployment) evaluationInspector(evalID *string) error {
 
+	q := &nomad.QueryOptions{WaitIndex: 1}
+
 	for {
-		evalInfo, _, err := l.nomad.Evaluations().Info(*evalID, nil)
+		evalInfo, meta, err := l.nomad.Evaluations().Info(*evalID, q)
 		if err != nil {
+			log.Error().Err(err).Msg("levant/evaluationInspector: unable to query evaluation information from Nomad")
 			return err
 		}
+
+		if meta.LastIndex <= q.WaitIndex {
+			continue
+		}
+		q.WaitIndex = meta.LastIndex
 
 		switch evalInfo.Status {
 		case "complete", "failed", "canceled":
@@ -226,7 +234,7 @@ func (l *levantDeployment) evaluationInspector(evalID *string) error {
 
 			for group, metrics := range evalInfo.FailedTGAllocs {
 
-				// Check if any nodes have been exhausted of resources and therefor are
+				// Check if any nodes have been exhausted of resources and therefore are
 				// unable to place allocs.
 				if metrics.NodesExhausted > 0 {
 					var exhausted, dimension []string
@@ -265,7 +273,6 @@ func (l *levantDeployment) evaluationInspector(evalID *string) error {
 			return nil
 
 		default:
-			time.Sleep(1 * time.Second)
 			continue
 		}
 	}
